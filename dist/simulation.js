@@ -1,5 +1,6 @@
 export const ROAD_HALF=8;
 export const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const SURFACE_DRAG={track:0,kerb:.02,apron:.05,asphalt:.08,grass:.75,gravel:1.3};
 export const angleDiff=(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b));
 export function formatTime(seconds){if(!Number.isFinite(seconds))return '—';const ms=Math.max(0,Math.floor(seconds*1000));return `${Math.floor(ms/60000)}:${String(Math.floor(ms/1000)%60).padStart(2,'0')}.${String(ms%1000).padStart(3,'0')}`;}
 export function nearestPoint(points,x,z){let best=Infinity,index=0,offset=0,fraction=0;for(let i=0;i<points.length;i++){const a=points[i],b=points[(i+1)%points.length],dx=b.x-a.x,dz=b.z-a.z,l2=dx*dx+dz*dz;const t=clamp(((x-a.x)*dx+(z-a.z)*dz)/l2,0,1),ex=x-a.x-dx*t,ez=z-a.z-dz*t,d=ex*ex+ez*ez;if(d<best){best=d;index=i;fraction=t;offset=(ex*(-dz)+ez*dx)/Math.sqrt(l2);}}return {index,fraction,offset,distance:Math.sqrt(best),progress:(index+fraction)/points.length};}
@@ -17,18 +18,22 @@ export class LapTimer{
  }
 }
 export class Simulation{
- constructor(points){this.points=points;this.timer=new LapTimer();this.reset();}
- reset(){this.speed=0;this.steer=0;this.timer.reset();this.teleport(.99);this.throttle=0;this.brake=0;this.hit=0;}
+ // track (optional): {edges, drsZones} from buildTrack — per-sample walls/run-off per side and DRS zones.
+ constructor(points,track={}){this.points=points;this.edges=track.edges||null;this.drsZones=track.drsZones||[];this.timer=new LapTimer();this.reset();}
+ reset(){this.speed=0;this.steer=0;this.timer.reset();this.teleport(.99);this.throttle=0;this.brake=0;this.hit=0;this.drs=false;this.drsZone=false;this.surface='track';}
  teleport(p){const i=Math.floor(p*this.points.length)%this.points.length,a=this.points[i],b=this.points[(i+2)%this.points.length];this.x=a.x;this.z=a.z;this.heading=Math.atan2(b.x-a.x,-(b.z-a.z));this.speed=0;this.steer=0;this.location=nearestPoint(this.points,this.x,this.z);this.timer.previous=this.location.progress;}
  recover(){this.teleport(this.location.progress);this.timer.invalidate(this.location.progress>.92);}
- step(dt,input){dt=Math.min(dt,1/30);this.throttle=input.throttle?1:0;this.brake=input.brake?1:0;const target=(input.right?1:0)-(input.left?1:0);this.steer+=(target-this.steer)*(1-Math.exp(-dt*7));const off=this.location.distance>ROAD_HALF+.5;
-  const acceleration=this.throttle*(14*(1-this.speed/112))-(this.brake?27:0)-.35-this.speed*this.speed*.00055-(off?this.speed*.75:0);
+ edgeAt(loc){return this.edges?this.edges[loc.index][loc.offset>=0?1:-1]:null;}
+ surfaceAt(loc){const d=loc.distance,e=this.edgeAt(loc);if(d<=ROAD_HALF+.3)return 'track';if(!e)return d>ROAD_HALF+.5?'grass':'track';if(e.kerb&&d<9.6)return 'kerb';if(e.runoff==='asphalt')return 'asphalt';if(e.runoff==='gravel')return d>12.5?'gravel':'apron';return d<11?'apron':'grass';}
+ step(dt,input){dt=Math.min(dt,1/30);this.throttle=input.throttle?1:0;this.brake=input.brake?1:0;const target=(input.right?1:0)-(input.left?1:0);this.steer+=(target-this.steer)*(1-Math.exp(-dt*7));this.surface=this.surfaceAt(this.location);
+  const acceleration=this.throttle*(14*(1-this.speed/112))-(this.brake?27:0)-.35-this.speed*this.speed*(this.drs?.00036:.00055)-SURFACE_DRAG[this.surface]*this.speed;
   this.speed=clamp(this.speed+acceleration*dt,0,96);
   const steeringAngle=this.steer*(.43/(1+this.speed*.035));let yaw=this.speed/3.6*Math.tan(steeringAngle);const maxYaw=(10+this.speed*this.speed*.0034)/Math.max(6,this.speed);yaw=clamp(yaw,-maxYaw,maxYaw);
   this.heading+=yaw*dt;this.x+=Math.sin(this.heading)*this.speed*dt;this.z-=Math.cos(this.heading)*this.speed*dt;
   this.location=nearestPoint(this.points,this.x,this.z);
   if(this.location.distance>ROAD_HALF-2){const wheels=[[-.98,-1.8],[.98,-1.8],[-.98,1.7],[.98,1.7]],c=Math.cos(this.heading),s=Math.sin(this.heading);const allOut=wheels.every(([x,z])=>nearestPoint(this.points,this.x+x*c-z*s,this.z+x*s+z*c).distance>ROAD_HALF+.16);if(allOut)this.timer.invalidate(this.location.progress>.94);}
-  if(this.location.distance>15.5){const a=this.points[this.location.index],b=this.points[(this.location.index+1)%this.points.length],t=this.location.fraction,px=a.x+(b.x-a.x)*t,pz=a.z+(b.z-a.z)*t;this.x=px+(this.x-px)*15.3/this.location.distance;this.z=pz+(this.z-pz)*15.3/this.location.distance;this.speed*=.65;this.hit=1;this.timer.invalidate(this.location.progress>.94);}
+  const limit=this.edgeAt(this.location)?.limit??15.5;if(this.location.distance>limit){const a=this.points[this.location.index],b=this.points[(this.location.index+1)%this.points.length],t=this.location.fraction,px=a.x+(b.x-a.x)*t,pz=a.z+(b.z-a.z)*t;this.x=px+(this.x-px)*(limit-.2)/this.location.distance;this.z=pz+(this.z-pz)*(limit-.2)/this.location.distance;this.speed*=.65;this.hit=1;this.timer.invalidate(this.location.progress>.94);}
+  const p=this.location.progress;this.drsZone=this.drsZones.some(z=>z.start<z.end?p>=z.start&&p<=z.end:p>=z.start||p<=z.end);if(input.drs&&this.drsZone&&!this.brake)this.drs=true;if(!this.drsZone||this.brake)this.drs=false;
   this.hit=Math.max(0,this.hit-dt*2);return this.timer.update(dt,this.location.progress);
  }
 }

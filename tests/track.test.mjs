@@ -1,0 +1,15 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {buildTrack} from '../dist/track.js';
+import {circuits} from '../dist/circuits.js';
+import {Simulation} from '../dist/simulation.js';
+for(const circuit of circuits){
+ const track=buildTrack(circuit,1800),N=track.points.length,id=circuit.id;
+ test(`${id}: lap starts on the start line heading north and closes without gaps or kinks`,()=>{const a=track.at(0);assert.ok(Math.hypot(a.x,a.z)<1e-6);assert.ok(Math.abs(a.tz+1)<1e-9);const step=track.length/N,minR=Math.min(...track.corners.map(c=>c.radius));for(let i=0;i<N;i++){const p=track.at(i/N),q=track.at((i+1)/N);assert.ok(Math.hypot(q.x-p.x,q.z-p.z)<=step+1e-6);const turn=Math.acos(Math.min(1,p.tx*q.tx+p.tz*q.tz));assert.ok(turn<=step/minR+1e-6);}});
+ test(`${id}: barriers of different parts of the lap never overlap`,()=>{const P=track.points,E=track.edges;for(let i=0;i<N;i+=4)for(let j=0;j<N;j+=4){let ds=Math.abs(i-j)/N*track.length;ds=Math.min(ds,track.length-ds);if(ds<200)continue;const wall=k=>Math.max(E[k][1].wall,E[k][-1].wall);assert.ok(Math.hypot(P[i].x-P[j].x,P[i].z-P[j].z)>wall(i)+wall(j),`samples ${i} and ${j}`);}});
+ test(`${id}: main straight covers the pits, grid and bridge; only it passes the pit building`,()=>{const main=track.segments[track.segments.length-1];assert.ok(Math.abs(main.x)<1e-6&&main.z>320&&main.z+main.tz*main.len< -440);for(let i=0;i<N;i++){const p=track.points[i];if(Math.abs(p.x)>1)assert.ok(!(p.x>-60&&p.x<40&&p.z>-330&&p.z<330),`sample ${i}`);}assert.equal(track.edges[0][-1].pit,true);assert.ok(track.edges[0][-1].wall<11);});
+ test(`${id}: corners get kerbs and run-off, and at least one DRS zone`,()=>{const c=track.corners[0],k=Math.round((c.start+c.end)/2*N);assert.equal(track.edges[k][c.sign].kerb,true);assert.notEqual(track.edges[k][-c.sign].runoff,'grass');assert.ok(track.drsZones.length>=1);});
+ test(`${id}: barriers stop the car at the per-corner wall distance`,()=>{const s=new Simulation(track.points,track),c=track.corners[0],k=Math.round((c.start+c.end)/2*N),p=track.points[k],q=track.points[k+1],l=Math.hypot(q.x-p.x,q.z-p.z),side=-c.sign;s.x=p.x+(-(q.z-p.z)/l)*side*80;s.z=p.z+((q.x-p.x)/l)*side*80;s.speed=10;s.step(1/120,{});s.step(1/120,{});assert.ok(s.location.distance<=track.edges[k][side].limit+.5);});
+}
+test('DRS raises top speed on the main straight and closes under braking',()=>{const track=buildTrack(circuits[0]);const run=drs=>{const s=new Simulation(track.points,track);s.teleport(.94);for(let i=0;i<120*14;i++)s.step(1/120,{throttle:true,drs});return s;};const open=run(true),closed=run(false);assert.equal(open.drs,true);assert.ok(open.speed>closed.speed+1,`${open.speed} vs ${closed.speed}`);open.step(1/120,{brake:true});assert.equal(open.drs,false);});
+test('circuit ids are unique and every theme names a scenery kit',()=>{assert.equal(new Set(circuits.map(c=>c.id)).size,circuits.length);for(const c of circuits)assert.ok(['coast','city','desert','forest'].includes(c.theme.scenery));});
