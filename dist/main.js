@@ -9,8 +9,8 @@ let circuit=circuits[0],track,points,sim,bounds;const keys=new Set();let drsPres
 let records=[];let savedSettings={quality:'high',camera:1,circuit:'costa'};let storageOK=true;
 // camera 0 chase, 1 driver's eyes (default), 2 T-cam. Records are stored per circuit.
 try{const prefs=JSON.parse(localStorage.getItem('kyrvex.settings.v1')||'{}');savedSettings={quality:prefs.quality==='low'?'low':'high',camera:[0,1,2].includes(prefs.camera)?prefs.camera:1,circuit:circuitById(prefs.circuit).id};}catch{storageOK=false;}
-const recordKey=id=>`kyrvex.records.${id}.v2`;
-function loadRecords(id){try{let stored=localStorage.getItem(recordKey(id));if(stored===null&&id==='costa')stored=localStorage.getItem('kyrvex.records.v2');const raw=JSON.parse(stored||'[]');return Array.isArray(raw)?raw.filter(r=>Number.isFinite(r.time)&&r.time>0&&Array.isArray(r.sectors)&&r.sectors.length===3).sort((a,b)=>a.time-b.time).slice(0,10):[];}catch{storageOK=false;return [];}}
+const recordKey=id=>`kyrvex.records.${id}.v${circuitById(id).revision||2}`;
+function loadRecords(id){try{const stored=localStorage.getItem(recordKey(id));const raw=JSON.parse(stored||'[]');return Array.isArray(raw)?raw.filter(r=>Number.isFinite(r.time)&&r.time>0&&Array.isArray(r.sectors)&&r.sectors.length===3).sort((a,b)=>a.time-b.time).slice(0,10):[];}catch{storageOK=false;return [];}}
 cameraMode=savedSettings.camera;world.quality(savedSettings.quality);
 const best=()=>records[0]||null;
 function saveSettings(){try{localStorage.setItem('kyrvex.settings.v1',JSON.stringify(savedSettings));}catch{storageOK=false;}}
