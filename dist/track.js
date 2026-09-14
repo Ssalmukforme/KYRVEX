@@ -16,8 +16,8 @@ function curvedFillet(f,corner){
  path[CORNER_STEPS]={x:f.bx,z:f.bz};
  return {type:'arc',corner,sign:f.sign,r:len*(1-TRANSITION)/Math.abs(f.turn),len,path,head0,turn:f.turn};
 }
-export function buildTrack(circuit=circuits[0],samples=1800){
- const V=circuit.layout.map(([x,z,r])=>({x,z,r})),n=V.length,style=circuit.style,segs=[];
+function polygonSegments(circuit){
+ const V=circuit.layout.map(([x,z,r])=>({x,z,r})),n=V.length,segs=[];
  const fil=V.map((v,i)=>{const a=V[(i+n-1)%n],b=V[(i+1)%n];let ux=v.x-a.x,uz=v.z-a.z,wx=b.x-v.x,wz=b.z-v.z;const lu=Math.hypot(ux,uz),lw=Math.hypot(wx,wz);ux/=lu;uz/=lu;wx/=lw;wz/=lw;
   const turn=Math.atan2(ux*wz-uz*wx,ux*wx+uz*wz),d=v.r*Math.tan(Math.abs(turn)/2),s=Math.sign(turn);const ax=v.x-ux*d,az=v.z-uz*d;
   return {turn,d,sign:s,r:v.r,ax,az,bx:v.x+wx*d,bz:v.z+wz*d,ux,uz};});
@@ -25,16 +25,39 @@ export function buildTrack(circuit=circuits[0],samples=1800){
   segs.push(curvedFillet(f,i));
   const lx=g.ax-f.bx,lz=g.az-f.bz,len=Math.hypot(lx,lz);if(f.d+g.d>Math.hypot(V[(i+1)%n].x-V[i].x,V[(i+1)%n].z-V[i].z)+1e-6)throw Error(`${circuit.id}: corner ${i+1} and ${(i+1)%n+1} overlap`);
   segs.push({type:'line',x:f.bx,z:f.bz,tx:lx/len,tz:lz/len,len});}
+ return segs;
+}
+function bezierValue(controls,t){let p=controls.map(v=>({...v}));for(let n=p.length-1;n>0;n--)for(let i=0;i<n;i++){p[i].x+=(p[i+1].x-p[i].x)*t;p[i].z+=(p[i+1].z-p[i].z)*t;}return p[0];}
+function derivatives(p){const n=p.length-1;return p.slice(1).map((v,i)=>({x:(v.x-p[i].x)*n,z:(v.z-p[i].z)*n}));}
+function authoredSegments(path){
+ let from=path.start,corner=0;return path.segments.map(s=>{let seg;
+  if(!s.c1){const dx=s.to.x-from.x,dz=s.to.z-from.z,len=Math.hypot(dx,dz);seg={type:'line',x:from.x,z:from.z,tx:dx/len,tz:dz/len,len};}
+  else {
+   // Quintic handles preserve the authored silhouette and tangent directions,
+   // with zero endpoint curvature for a smooth join into each straight or S bend.
+   const toward=(a,b,f)=>({x:a.x+(b.x-a.x)*f,z:a.z+(b.z-a.z)*f});
+   const controls=[from,toward(from,s.c1,.6),toward(from,s.c1,1.2),toward(s.to,s.c2,1.2),toward(s.to,s.c2,.6),s.to];
+   const d1=derivatives(controls),d2=derivatives(d1),table=[{t:0,s:0,...from}];let prev=from,len=0,maxK=0,signed=0;
+   for(let i=1;i<=512;i++){const t=i/512,p=bezierValue(controls,t),v=bezierValue(d1,t),a=bezierValue(d2,t),k=(v.x*a.z-v.z*a.x)/Math.pow(v.x*v.x+v.z*v.z,1.5);len+=Math.hypot(p.x-prev.x,p.z-prev.z);table.push({t,s:len,...p});prev=p;if(Math.abs(k)>maxK){maxK=Math.abs(k);signed=k;}}
+   seg={type:'bezier',corner:corner++,sign:Math.sign(signed),r:1/maxK,len,controls,d1,d2,table};
+  }
+  from=s.to;return seg;
+ });
+}
+function sampleBezier(g,distance){const table=g.table;let lo=0,hi=table.length-1;while(lo<hi){const mid=(lo+hi+1)>>1;if(table[mid].s<=distance)lo=mid;else hi=mid-1;}const a=table[lo],b=table[Math.min(lo+1,table.length-1)],f=b.s===a.s?0:(distance-a.s)/(b.s-a.s),t=a.t+(b.t-a.t)*f,v=bezierValue(g.d1,t),acc=bezierValue(g.d2,t),speed=Math.hypot(v.x,v.z);return {x:a.x+(b.x-a.x)*f,z:a.z+(b.z-a.z)*f,tx:v.x/speed,tz:v.z/speed,curvature:(v.x*acc.z-v.z*acc.x)/speed**3,seg:g};}
+export function buildTrack(circuit=circuits[0],samples=1800){
+ const style=circuit.style,segs=circuit.path?authoredSegments(circuit.path):polygonSegments(circuit);
  let total=0;for(const s of segs){s.s0=total;total+=s.len;}
  // Put s=0 on the start line: project (0,0) onto the final straight.
  const home=segs[segs.length-1],startOffset=home.s0+((0-home.x)*home.tx+(0-home.z)*home.tz);
  const raw=s=>{s=((s%total)+total)%total;let lo=0,hi=segs.length-1;while(lo<hi){const m=(lo+hi+1)>>1;if(segs[m].s0<=s)lo=m;else hi=m-1;}const g=segs[lo],l=s-g.s0;
   if(g.type==='line')return {x:g.x+g.tx*l,z:g.z+g.tz*l,tx:g.tx,tz:g.tz,curvature:0,seg:g};
+  if(g.type==='bezier')return sampleBezier(g,l);
   const u=Math.max(0,Math.min(1,l/g.len)),j=u*CORNER_STEPS,k=Math.min(CORNER_STEPS-1,Math.floor(j)),f=j-k,a=g.path[k],b=g.path[k+1],heading=g.head0+g.turn*cornerHeading(u);
   const ramp=Math.min(1,u/TRANSITION,(1-u)/TRANSITION);
   return {x:a.x+(b.x-a.x)*f,z:a.z+(b.z-a.z)*f,tx:Math.cos(heading),tz:Math.sin(heading),curvature:g.sign/g.r*ramp,seg:g};};
  const at=t=>raw(startOffset+t*total);
- const corners=segs.filter(s=>s.type==='arc').map(s=>{const a=((s.s0-startOffset)%total+total)%total;return {index:s.corner+1,sign:s.sign,radius:s.r,start:a/total,end:(a+s.len)/total,length:s.len,straightBefore:segs[(segs.indexOf(s)+segs.length-1)%segs.length].len};});
+ const corners=segs.filter(s=>s.type!=='line').map(s=>{const a=((s.s0-startOffset)%total+total)%total,prev=segs[(segs.indexOf(s)+segs.length-1)%segs.length];return {index:s.corner+1,sign:s.sign,radius:s.r,start:a/total,end:(a+s.len)/total,length:s.len,straightBefore:prev.type==='line'?prev.len:0};});
  const points=Array.from({length:samples},(_,i)=>{const p=at(i/samples);return {x:p.x,z:p.z};});
  // Per-sample trackside profile: wall distance per side, run-off surface and kerbs, blended around each corner.
  const dist=(a,b)=>{let d=(b-a)*total;d-=Math.round(d/total)*total;return d;};
@@ -53,5 +76,6 @@ export function buildTrack(circuit=circuits[0],samples=1800){
   return side;});
  // DRS on every straight long enough to matter: opens 60 m after the corner, closes 140 m before the next.
  const drsZones=segs.filter(s=>s.type==='line'&&s.len>600).map(s=>{const a=((s.s0-startOffset)%total+total)%total;return {start:(a+60)/total%1,end:(a+s.len-140)/total%1};});
- return {circuit,points,length:total,corners,edges,drsZones,at,segments:segs};
+ const bridgeDistance=Math.min(420,-(home.z+home.tz*home.len)-30);
+ return {circuit,points,length:total,corners,edges,drsZones,at,segments:segs,bridgeDistance};
 }

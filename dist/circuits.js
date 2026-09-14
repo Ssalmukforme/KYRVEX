@@ -2,12 +2,12 @@
 // Every layout starts at (0,0) heading -z on a main straight along x=0 (pit lane on the left, grandstands on the right).
 // layout: [x, z, corner radius] in travel order. style: trackside rules used by buildTrack.
 // theme: look & feel used by world.js.
+import {costaPath,costaMapRotation} from './costa-layout.js';
 export const circuits=[
  {id:'costa',name:'코스타 아줄',title:'COSTA AZUL CIRCUIT',short:'COSTA AZUL',location:'PORTUGAL · ATLANTIC COAST',weather:['☀','24°','DRY'],
-  revision:3,
-  layout:[[0,-720,95],[230,-940,180],[600,-920,140],[790,-700,140],[720,-470,100],[950,-260,65],[930,450,50],[765,480,50],[740,120,90],[490,80,105],[350,300,130],[420,560,80],[180,690,85],[0,590,130]],
+  revision:4,path:costaPath,mapRotation:costaMapRotation,
   style:{wall:17,outer:[46,36,28],runoff:['asphalt','gravel'],innerExtra:4},
-  stands:[[1,70],[4,60],[7,80],[8,60],[12,70],[14,70]],
+  stands:[[1,70],[4,60],[7,65],[11,70],[13,70],[18,70]],
   theme:{scenery:'coast',skyTop:'#28434e',skyBottom:'#edcfa4',fog:'#aeb5a2',fogDensity:.00055,hemi:['#d1e7e7','#48533c',2.2],sun:['#fff0ce',3.5],sunOffset:[-120,170,-150],exposure:1.12,ground:'#59644a',grass:['#5f7f45','#6b8c4d'],apron:'#3f6b55',kerb:['#c8372d','#efefe9'],bands:['#2f63b8','#bf3a2f'],walls:'sponsor',sponsors:['KYRVEX','HALDRA','NOVIQ','OSTRAL'],asphaltRoughness:.91}},
  {id:'noctis',name:'녹티스 하버',title:'NOCTIS HARBOUR STREET CIRCUIT',short:'NOCTIS HARBOUR',location:'HARBOUR CITY · NIGHT RACE',weather:['☾','29°','NIGHT'],
   revision:3,
