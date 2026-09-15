@@ -14,3 +14,9 @@ body.driver-view .speedometer{left:auto;right:0;transform:none;bottom:0}
 body.driver-view .race-help{margin-bottom:150px}
 @media(max-width:700px){body.driver-view .race-help{margin-bottom:0}}
 .track-switch{display:flex;align-items:center;gap:8px}.track-arrow{pointer-events:auto;background:#ffffff0d;border:1px solid var(--line);color:#e8eee0;width:24px;height:22px;padding:0;font-size:15px;line-height:1}.track-arrow:hover{background:var(--lime);color:#11170b}.card-top{align-items:center}
+
+/* Global ranking (ssalmuk_ranking) */
+.record-tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:-10px 0 4px}.record-tabs button{background:none;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;padding:10px 14px;font-size:13px;color:var(--muted)}.record-tabs button[aria-selected="true"]{color:#f3f5ee;font-weight:700;border-color:var(--lime)}
+.record-row.you{background:#d8ff3e10}.record-row em{font-style:normal;font-size:9px;font-weight:800;letter-spacing:1px;padding:1px 5px;background:var(--lime);color:#161d0d;margin-left:4px}
+.records-standing{color:var(--lime)!important;min-height:1.2em;margin:10px 0 0}.driver-note{font-size:12px!important;color:var(--muted)!important;margin:6px 0 0}.driver-note b{color:#f3f5ee}
+.settings-row input{color:white;background:#293522;padding:10px;border:1px solid #ffffff33;font:inherit;width:180px}.settings-row input:focus{outline:2px solid var(--lime);outline-offset:1px}
